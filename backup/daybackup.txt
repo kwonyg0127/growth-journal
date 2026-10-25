@@ -1,0 +1,107 @@
+import { TODAY_STRING } from '@/utils/date';
+import { StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+import CircularClock from '@/components/CircularClock';
+
+// ─────────────────────────────────────────────
+// 이번 주 월요일~일요일 날짜 7개 계산
+// ─────────────────────────────────────────────
+const getWeekDates = () => {
+  const today = new Date(TODAY_STRING);
+  const day = today.getDay(); // 0=일, 1=월, ..., 6=토
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+  const monday = new Date(today);
+  monday.setDate(today.getDate() + diffToMonday);
+
+  const dates: Date[] = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    dates.push(d);
+  }
+  return dates;
+};
+
+// 날짜 → "2026-10-13" 문자열 변환 (비교용)
+const toDateStr = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+const WEEK_LABELS = ['월', '화', '수', '목', '금', '토', '일'];
+
+export default function DayTab() {
+  const weekDates = getWeekDates();
+
+  return (
+    <SafeAreaView style={styles.container} edges={['top']}>
+      {/* 주간 헤더 */}
+      <View style={styles.weekRow}>
+        {weekDates.map((date, i) => {
+          const dateStr = toDateStr(date);
+          const isToday = dateStr === TODAY_STRING;
+          return (
+            <View key={i} style={styles.dayItem}>
+              <Text style={[styles.dayLabel, isToday && styles.dayLabelToday]}>
+                {WEEK_LABELS[i]}
+              </Text>
+              <View style={[styles.dayNumber, isToday && styles.dayNumberToday]}>
+                <Text style={[styles.dayNumberText, isToday && styles.dayNumberTextToday]}>
+                  {date.getDate()}
+                </Text>
+              </View>
+            </View>
+          );
+        })}
+      </View>
+
+      {/* 원형 시계 자리 */}
+      <View style={styles.clockWrapper}>
+        <CircularClock />
+      </View>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#FAFAFA' },
+
+  // 주간 헤더
+  weekRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingVertical: 16,
+    paddingHorizontal: 8,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  dayItem: { alignItems: 'center' },
+  dayLabel: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    fontWeight: '600',
+    marginBottom: 6,
+  },
+  dayLabelToday: { color: '#2E7D32' },
+  dayNumber: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  dayNumberToday: { backgroundColor: '#2E7D32' },
+  dayNumberText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#374151',
+  },
+  dayNumberTextToday: { color: '#FFFFFF', fontWeight: 'bold' },
+
+  // 원형 시계 자리
+  clockWrapper: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+});

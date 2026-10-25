@@ -1,0 +1,301 @@
+import { Plan } from '@/types/plan';
+import { TODAY_MONTH_STRING, TODAY_STRING, TODAY_YEAR } from '@/utils/date';
+import { useFocusEffect } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
+import {
+  Alert, BackHandler, Dimensions, StyleSheet, Text, TouchableOpacity, View,
+} from 'react-native';
+import { Calendar, LocaleConfig } from 'react-native-calendars';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+import AddFormModal from '@/components/AddFormModal';
+import BriefingCard from '@/components/BriefingCard';
+import DayCell from '@/components/DayCell';
+import DayModal from '@/components/DayModal';
+import PickerModal from '@/components/PickerModal';
+import { useScheduleStore } from '@/stores/scheduleStore';
+
+// ─────────────────────────────────────────────
+// 한글 설정
+// ─────────────────────────────────────────────
+LocaleConfig.locales['ko'] = {
+  monthNames: ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'],
+  monthNamesShort: ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'],
+  dayNames: ['일요일','월요일','화요일','수요일','목요일','금요일','토요일'],
+  dayNamesShort: ['일','월','화','수','목','금','토'],
+};
+LocaleConfig.defaultLocale = 'ko';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const DAY_CELL_WIDTH = Math.floor((SCREEN_WIDTH - 16) / 7);
+
+export default function CalendarTab() {
+  const { scheduleData, addPlan, selectedDate, setSelectedDate } = useScheduleStore();
+
+  const [currentMonth, setCurrentMonth] = useState(TODAY_MONTH_STRING);
+  const [calendarKey, setCalendarKey] = useState(0);
+  const [pickerVisible, setPickerVisible] = useState(false);
+  const [pickerYear, setPickerYear] = useState(TODAY_YEAR);
+
+  const [dayModalVisible, setDayModalVisible] = useState(false);
+  const [dayModalDate, setDayModalDate] = useState("");
+
+  const [addFormVisible, setAddFormVisible] = useState(false);
+  const [formTitle, setFormTitle] = useState("");
+  const [formStart, setFormStart] = useState("");
+  const [formEnd, setFormEnd] = useState("");
+  const [formCategory, setFormCategory] = useState("공부");
+
+  const modalPlans = scheduleData[dayModalDate] || [];
+
+  // ─────────────────────────────────────────────
+  // AI 브리핑 데이터 계산
+  // ─────────────────────────────────────────────
+  const selectedPlans = scheduleData[selectedDate] || [];
+  const isToday = selectedDate === TODAY_STRING;
+  const dateLabel = isToday ? '오늘' : `${selectedDate.slice(5).replace('-', '월 ')}일`;
+
+  let briefingMessage = '';
+  let briefingSub = '';
+
+  if (selectedPlans.length === 0) {
+    briefingMessage = `${dateLabel}은 여유로운 하루예요 ☕`;
+    briefingSub = 'AI에게 말로 일정을 추가해보세요';
+  } else {
+    briefingMessage = `${dateLabel}은 ${selectedPlans.length}개의 일정이 있어요`;
+    const firstPlan = selectedPlans[0];
+    briefingSub = `가장 먼저: ${firstPlan.startTime} ${firstPlan.title}`;
+  }
+
+  // ─────────────────────────────────────────────
+  // 🔥 탭을 떠날 때 모달 닫기 (기본 상태로 복귀)
+  // ─────────────────────────────────────────────
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        setDayModalVisible(false);
+        setAddFormVisible(false);
+        setPickerVisible(false);
+      };
+    }, [])
+  );
+
+  // ─────────────────────────────────────────────
+  // 안드로이드 뒤로가기 처리
+  // ─────────────────────────────────────────────
+  useEffect(() => {
+    const backAction = () => {
+      if (addFormVisible) { setAddFormVisible(false); return true; }
+      if (dayModalVisible) { setDayModalVisible(false); return true; }
+      if (pickerVisible) { setPickerVisible(false); return true; }
+      return false;
+    };
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
+    return () => backHandler.remove();
+  }, [addFormVisible, dayModalVisible, pickerVisible]);
+
+  const handleSelectMonth = (month: number) => {
+    const newDate = `${pickerYear}-${String(month).padStart(2, '0')}-01`;
+    setCurrentMonth(newDate);
+    setSelectedDate(newDate);
+    setCalendarKey((k) => k + 1);
+    setPickerVisible(false);
+  };
+
+  const openDayModal = (dateString: string) => {
+    setSelectedDate(dateString);
+    setDayModalDate(dateString);
+    setDayModalVisible(true);
+  };
+
+  const openAddForm = () => {
+    setFormTitle("");
+    setFormStart("");
+    setFormEnd("");
+    setFormCategory("공부");
+    setAddFormVisible(true);
+  };
+
+  const isValidTime = (t: string) => /^([01]\d|2[0-3]):[0-5]\d$/.test(t);
+
+  const handleSavePlan = () => {
+    if (!formTitle.trim()) {
+      Alert.alert("알림", "활동명을 입력해주세요.");
+      return;
+    }
+    if (!isValidTime(formStart) || !isValidTime(formEnd)) {
+      Alert.alert("알림", "시간은 00:00~23:59 형식으로 입력해주세요. (예: 09:00)");
+      return;
+    }
+    if (formEnd <= formStart) {
+      Alert.alert("알림", "종료 시간은 시작 시간보다 늦어야 해요.");
+      return;
+    }
+
+    const newPlan: Plan = {
+      id: Date.now().toString() + Math.random().toString(36).slice(2, 6),
+      title: formTitle.trim(),
+      startTime: formStart,
+      endTime: formEnd,
+      category: formCategory,
+      done: false,
+    };
+
+    addPlan(dayModalDate, newPlan);
+    setAddFormVisible(false);
+  };
+
+  const renderHeader = (date: any) => {
+    const year = date.getFullYear();
+    const month = date.getMonth() + 1;
+    return (
+      <TouchableOpacity
+        style={styles.customHeader}
+        onPress={() => {
+          setPickerYear(year);
+          setPickerVisible(true);
+        }}
+      >
+        <Text style={styles.headerYear}>{year}년</Text>
+        <Text style={styles.headerMonth}>{month}월</Text>
+        <Text style={styles.headerArrow}>▼</Text>
+      </TouchableOpacity>
+    );
+  };
+
+  return (
+    <SafeAreaView style={styles.container} edges={['top']}>
+      {/* AI 브리핑 카드 */}
+      <BriefingCard message={briefingMessage} sub={briefingSub} />
+
+      {/* 달력 */}
+      <View style={styles.calendarWrapper}>
+        <Calendar
+          key={calendarKey}
+          current={currentMonth}
+          onDayPress={(day: any) => openDayModal(day.dateString)}
+          dayComponent={({ date, state }: any) => {
+            const dateString = date.dateString;
+            const plans = scheduleData[dateString] || [];
+            return (
+              <DayCell
+                date={date}
+                plans={plans}
+                isSelected={dateString === selectedDate}
+                isToday={dateString === TODAY_STRING}
+                isDisabled={state === 'disabled'}
+                onPress={() => openDayModal(dateString)}
+              />
+            );
+          }}
+          renderHeader={renderHeader}
+          style={styles.calendar}
+          theme={{
+            arrowColor: '#2E7D32',
+            'stylesheet.calendar.header': {
+              header: {
+                flexDirection: 'row',
+                justifyContent: 'space-between',
+                paddingLeft: 10,
+                paddingRight: 10,
+                marginTop: 6,
+                alignItems: 'center',
+              },
+              week: {
+                marginTop: 8,
+                marginBottom: 4,
+                flexDirection: 'row',
+                justifyContent: 'space-around',
+              },
+              dayHeader: {
+                width: DAY_CELL_WIDTH,
+                textAlign: 'center',
+                fontSize: 12,
+                color: '#9CA3AF',
+                fontWeight: '600',
+              },
+            },
+          } as any}
+        />
+      </View>
+
+      <TouchableOpacity
+        style={styles.fab}
+        onPress={() => console.log('AI 채팅 열기')}
+        activeOpacity={0.8}
+      >
+        <Text style={styles.fabIcon}>✨</Text>
+      </TouchableOpacity>
+
+      {/* 날짜 상세 모달 */}
+      <DayModal
+        visible={dayModalVisible}
+        date={dayModalDate}
+        plans={modalPlans}
+        onClose={() => setDayModalVisible(false)}
+        onAdd={openAddForm}
+      />
+
+      {/* 일정 추가 폼 모달 */}
+      <AddFormModal
+        visible={addFormVisible}
+        date={dayModalDate}
+        title={formTitle}
+        startTime={formStart}
+        endTime={formEnd}
+        category={formCategory}
+        onChangeTitle={setFormTitle}
+        onChangeStart={setFormStart}
+        onChangeEnd={setFormEnd}
+        onChangeCategory={setFormCategory}
+        onClose={() => setAddFormVisible(false)}
+        onSave={handleSavePlan}
+      />
+
+      {/* 연/월 선택 모달 */}
+      <PickerModal
+        visible={pickerVisible}
+        year={pickerYear}
+        onClose={() => setPickerVisible(false)}
+        onSelectYear={setPickerYear}
+        onSelectMonth={handleSelectMonth}
+      />
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#FAFAFA' },
+  calendarWrapper: { flex: 1, backgroundColor: '#FFFFFF' },
+  calendar: { width: SCREEN_WIDTH },
+
+  customHeader: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    gap: 6,
+  },
+  headerYear: { fontSize: 14, color: '#9CA3AF', fontWeight: '600' },
+  headerMonth: { fontSize: 22, fontWeight: 'bold', color: '#111827' },
+  headerArrow: { fontSize: 10, color: '#2E7D32', marginLeft: 2 },
+
+  fab: {
+    position: 'absolute',
+    right: 20,
+    bottom: 20,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#2E7D32',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#2E7D32',
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 8,
+    zIndex: 5,
+  },
+  fabIcon: { fontSize: 26 },
+});
